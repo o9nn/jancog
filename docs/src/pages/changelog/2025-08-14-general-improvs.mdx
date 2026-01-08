@@ -1,0 +1,77 @@
+---
+title: "Jan v0.6.8: Engine fixes, new MCP tutorials, and cleaner docs"
+version: 0.6.8
+description: "Llama.cpp stability upgrades, Linear/Todoist MCP tutorials, new model pages (Lucy, Jan‑v1), and docs reorganization"
+date: 2025-08-14
+ogImage: "https://catalog.jan.ai/docs/mcplinear2.gif"
+---
+
+import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
+import { Callout } from 'nextra/components'
+
+<ChangelogHeader title="Jan v0.6.8: Engine fixes, new MCP tutorials, and cleaner docs" date="2025-08-14" ogImage="https://catalog.jan.ai/docs/mcplinear2.gif" />
+
+## Highlights 🎉
+
+v0.6.8 focuses on stability and real workflows: major llama.cpp hardening, two new MCP productivity tutorials, new model pages, and a cleaner docs structure.
+
+
+### 🚀 New tutorials & docs
+
+- Linear MCP tutorial: create/update issues, projects, comments, cycles — directly from chat
+- Todoist MCP tutorial: add, list, update, complete, and delete tasks via natural language
+- New model pages:
+  - Lucy (1.7B) — optimized for web_search tool calling
+  - Jan‑v1 (4B) — strong SimpleQA (91.1%), solid tool use
+- Docs updates:
+  - Reorganized landing and Products sections; streamlined QuickStart
+  - Ongoing Docs v2 (Astro) migration with handbook, blog, and changelog sections added and then removed
+
+### 🧱 Llama.cpp engine: stability & correctness
+
+- Structured error handling for llama.cpp extension
+- Better argument handling, improved model path resolution, clearer error messages
+- Device parsing tests; conditional Vulkan support; support for missing CUDA backends
+- AVX2 instruction support check (Mac Intel) for MCP
+- Server hang on model load — fixed
+- Session management & port allocation moved to backend for robustness
+- Recommended labels in settings; per‑model Jinja template customization
+- Tensor buffer type override support
+- “Continuous batching” description corrected
+
+### ✨ UX polish
+
+- Thread sorting fixed; assistant dropdown click reliability improved
+- Responsive left panel text color; provider logo blur cleanup
+- Show toast on download errors; context size error dialog restored
+- Prevent accidental message submit for IME users
+- Onboarding loop fixed; GPU detection brought back
+- Connected MCP servers status stays in sync after JSON edits
+
+### 🔍 Hub & providers
+
+- Hugging Face token respected for repo search and private README visualization
+- Deep links and model details fixed
+- Factory reset unblocked; special chars in `modelId` handled
+- Feature toggle for auto‑updater respected
+
+### 🧪 CI & housekeeping
+
+- Nightly/PR workflow tweaks; clearer API server logs
+- Cleaned unused hardware APIs
+- Release workflows updated; docs release paths consolidated
+
+### 🤖 Reasoning model fixes
+
+- gpt‑oss “thinking block” rendering fixed
+- Reasoning text no longer included in chat completion requests
+
+## Thanks to new contributors
+
+· @cmppoon · @shmutalov · @B0sh
+
+---
+
+Update your Jan or [download the latest](https://jan.ai/).
+
+For the complete list of changes, see the [GitHub release notes](https://github.com/menloresearch/jan/releases/tag/v0.6.8).
