@@ -22,6 +22,15 @@ import {
   INFER_KNOWLEDGE,
   EXECUTE_TOOL,
   GET_KNOWLEDGE_STATS,
+  // New v4.0 tools
+  CREATE_TENANT,
+  MANAGE_TENANT,
+  QUERY_MULTI_TENANT,
+  SPAWN_AGENT_ZERO,
+  EXECUTE_AGENT_ZERO_PLAN,
+  CREATE_CONSTELLATION,
+  MANAGE_CONSTELLATION,
+  SHARE_CONSTELLATION_KNOWLEDGE,
 } from './tools'
 
 import { TaskExecutor, type TaskExecutionResult } from './task-executor'
@@ -34,8 +43,14 @@ import { Atomspace, getAtomspace, resetAtomspace, type AtomPattern } from './ato
 import { PLNEngine, getPLNEngine, resetPLNEngine, type ForwardChainingConfig, type BackwardChainingConfig } from './pln'
 import { ToolManager, getToolManager, resetToolManager } from './tool-integration'
 
+// v4.0 imports - Multi-Tenancy, Agent-Zero, and Constellations
+import { TenantManager, getTenantManager, resetTenantManager, type TenantConfig } from './tenant-manager'
+import { MultiTenantAtomspaceFabric, getMultiTenantAtomspaceFabric, resetMultiTenantAtomspaceFabric } from './multi-tenant-atomspace'
+import { AgentZeroWorkbench, getAgentZeroWorkbench, resetAgentZeroWorkbench, type AgentZeroConfig } from './agent-zero'
+import { ConstellationManager, getConstellationManager, resetConstellationManager, type AIOrganization } from './constellation-manager'
+
 /**
- * OpenCog Extension for Jan - Autonomous Orchestration Engine (v3.0)
+ * OpenCog Extension for Jan - Autonomous Orchestration Engine (v4.0)
  *
  * This extension implements OpenCog-inspired cognitive AI capabilities for autonomous
  * task planning, reasoning, and execution. Enhanced features include:
@@ -48,12 +63,19 @@ import { ToolManager, getToolManager, resetToolManager } from './tool-integratio
  * - Multi-agent coordination: Parallel task execution with specialized agents
  * - Enhanced cognitive reasoning: Better goal analysis and task decomposition
  *
- * v3.0 Features (NEW):
+ * v3.0 Features:
  * - Atomspace: Graph-based knowledge representation with nodes and links
  * - PLN (Probabilistic Logic Networks): Probabilistic inference and reasoning
  * - Tool Integration: Connect orchestration to Jan's tools (RAG, files, web, LLM)
  * - Knowledge-driven planning: Use stored knowledge to improve planning
  * - Inference-based task selection: PLN-powered optimal strategy selection
+ *
+ * v4.0 Features (NEW):
+ * - Multi-Tenant Atomspace Fabric: Tenant-isolated knowledge graphs with configurable sharing
+ * - Agent-Zero Workbench: Autonomous agent orchestration with self-organization
+ * - AI-Org Constellations: Modular deployment of multi-assistant organizations
+ * - Cross-Tenant Federation: Query and share knowledge across tenants
+ * - Inter-Constellation Communication: Coordinate multiple AI organizations
  */
 export default class JanOpenCogExtension extends OpenCogExtension {
   private config = {
@@ -71,6 +93,12 @@ export default class JanOpenCogExtension extends OpenCogExtension {
     enableToolIntegration: true,
     plnMaxIterations: 10,
     plnMinConfidence: 0.3,
+    // v4.0 settings
+    enableMultiTenancy: true,
+    enableAgentZero: true,
+    enableConstellations: true,
+    maxAgentsPerWorkbench: 10,
+    agentZeroCoordination: 'hierarchical' as 'centralized' | 'distributed' | 'hierarchical',
   }
 
   // Core components (v2.0)
@@ -83,6 +111,12 @@ export default class JanOpenCogExtension extends OpenCogExtension {
   private atomspace: Atomspace
   private plnEngine: PLNEngine
   private toolManager: ToolManager
+
+  // v4.0 components
+  private tenantManager: TenantManager
+  private multiTenantAtomspace: MultiTenantAtomspaceFabric
+  private agentZeroWorkbench: AgentZeroWorkbench
+  private constellationManager: ConstellationManager
 
   // In-memory state (synced with persistence)
   private plans: Map<string, OrchestrationPlan> = new Map()
@@ -108,6 +142,12 @@ export default class JanOpenCogExtension extends OpenCogExtension {
     this.atomspace = getAtomspace()
     this.plnEngine = getPLNEngine()
     this.toolManager = getToolManager()
+
+    // Initialize v4.0 components
+    this.tenantManager = getTenantManager()
+    this.multiTenantAtomspace = getMultiTenantAtomspaceFabric()
+    this.agentZeroWorkbench = getAgentZeroWorkbench()
+    this.constellationManager = getConstellationManager()
   }
 
   async onLoad(): Promise<void> {
@@ -132,6 +172,13 @@ export default class JanOpenCogExtension extends OpenCogExtension {
     this.config.enableToolIntegration = await this.getSetting('enable_tool_integration', this.config.enableToolIntegration)
     this.config.plnMaxIterations = await this.getSetting('pln_max_iterations', this.config.plnMaxIterations)
     this.config.plnMinConfidence = await this.getSetting('pln_min_confidence', this.config.plnMinConfidence)
+
+    // Load v4.0 configuration
+    this.config.enableMultiTenancy = await this.getSetting('enable_multi_tenancy', this.config.enableMultiTenancy)
+    this.config.enableAgentZero = await this.getSetting('enable_agent_zero', this.config.enableAgentZero)
+    this.config.enableConstellations = await this.getSetting('enable_constellations', this.config.enableConstellations)
+    this.config.maxAgentsPerWorkbench = await this.getSetting('max_agents_per_workbench', this.config.maxAgentsPerWorkbench)
+    this.config.agentZeroCoordination = await this.getSetting('agent_zero_coordination', this.config.agentZeroCoordination)
 
     // Re-initialize v2.0 components with loaded config
     this.persistence = new PlanPersistence(this.config.enablePersistence)
@@ -175,9 +222,27 @@ export default class JanOpenCogExtension extends OpenCogExtension {
       console.log(`[OpenCog] Loaded ${persistedPlans.length} persisted plans`)
     }
 
-    console.log('[OpenCog] Orchestration engine v3.0 loaded successfully')
+    // Initialize v4.0 components
+    if (this.config.enableMultiTenancy) {
+      this.tenantManager = getTenantManager()
+      this.multiTenantAtomspace = getMultiTenantAtomspaceFabric()
+      console.log(`[OpenCog] Multi-tenant atomspace fabric initialized with ${this.tenantManager.listTenants().length} tenants`)
+    }
+
+    if (this.config.enableAgentZero) {
+      this.agentZeroWorkbench = getAgentZeroWorkbench()
+      console.log(`[OpenCog] Agent-Zero workbench initialized with ${this.config.agentZeroCoordination} coordination`)
+    }
+
+    if (this.config.enableConstellations) {
+      this.constellationManager = getConstellationManager()
+      console.log(`[OpenCog] Constellation manager initialized with ${this.constellationManager.listOrganizations().length} AI-orgs`)
+    }
+
+    console.log('[OpenCog] Orchestration engine v4.0 loaded successfully')
     console.log(`[OpenCog] v2.0 Features: persistence=${this.config.enablePersistence}, multi-agent=${this.config.enableMultiAgent}, replanning=${this.config.enableDynamicReplanning}`)
     console.log(`[OpenCog] v3.0 Features: atomspace=${this.config.enableAtomspace}, pln=${this.config.enablePLN}, tools=${this.config.enableToolIntegration}`)
+    console.log(`[OpenCog] v4.0 Features: multi-tenancy=${this.config.enableMultiTenancy}, agent-zero=${this.config.enableAgentZero}, constellations=${this.config.enableConstellations}`)
   }
 
   onUnload(): void {
@@ -235,6 +300,23 @@ export default class JanOpenCogExtension extends OpenCogExtension {
           return await this.handleExecuteTool(args)
         case GET_KNOWLEDGE_STATS:
           return await this.handleGetKnowledgeStats(args)
+        // v4.0 tools
+        case CREATE_TENANT:
+          return await this.handleCreateTenant(args)
+        case MANAGE_TENANT:
+          return await this.handleManageTenant(args)
+        case QUERY_MULTI_TENANT:
+          return await this.handleQueryMultiTenant(args)
+        case SPAWN_AGENT_ZERO:
+          return await this.handleSpawnAgentZero(args)
+        case EXECUTE_AGENT_ZERO_PLAN:
+          return await this.handleExecuteAgentZeroPlan(args)
+        case CREATE_CONSTELLATION:
+          return await this.handleCreateConstellation(args)
+        case MANAGE_CONSTELLATION:
+          return await this.handleManageConstellation(args)
+        case SHARE_CONSTELLATION_KNOWLEDGE:
+          return await this.handleShareConstellationKnowledge(args)
         default:
           return {
             error: `Unknown tool: ${toolName}`,
@@ -990,6 +1072,369 @@ export default class JanOpenCogExtension extends OpenCogExtension {
     }
   }
 
+  // v4.0 Tool Handlers - Multi-Tenancy, Agent-Zero, and Constellations
+
+  private async handleCreateTenant(args: Record<string, unknown>): Promise<MCPToolCallResult> {
+    if (!this.config.enableMultiTenancy) {
+      return {
+        error: 'Multi-tenancy is disabled',
+        content: [{ type: 'text', text: 'Multi-tenancy is disabled in settings' }],
+      }
+    }
+
+    try {
+      const tenant = this.tenantManager.createTenant({
+        id: args.tenant_id as string,
+        name: args.name as string,
+        description: args.description as string,
+        maxAtoms: (args.max_atoms as number) || 100000,
+        maxLinks: (args.max_links as number) || 500000,
+        maxMemoryMB: (args.max_memory_mb as number) || 512,
+        plnEnabled: true,
+        toolsEnabled: true,
+        sharedKnowledge: (args.shared_knowledge as boolean) || false,
+        isolationLevel: (args.isolation_level as 'strict' | 'shared' | 'hybrid') || 'hybrid',
+        metadata: {},
+      })
+
+      return {
+        error: '',
+        content: [{
+          type: 'text',
+          text: `Created tenant: ${JSON.stringify(tenant, null, 2)}`
+        }],
+      }
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        content: [{ type: 'text', text: `Failed to create tenant: ${error}` }],
+      }
+    }
+  }
+
+  private async handleManageTenant(args: Record<string, unknown>): Promise<MCPToolCallResult> {
+    if (!this.config.enableMultiTenancy) {
+      return {
+        error: 'Multi-tenancy is disabled',
+        content: [{ type: 'text', text: 'Multi-tenancy is disabled in settings' }],
+      }
+    }
+
+    const action = args.action as string
+
+    try {
+      switch (action) {
+        case 'get': {
+          const tenant = this.tenantManager.getTenant(args.tenant_id as string)
+          return {
+            error: '',
+            content: [{ type: 'text', text: JSON.stringify(tenant, null, 2) }],
+          }
+        }
+        case 'list': {
+          const tenants = this.tenantManager.listTenants()
+          return {
+            error: '',
+            content: [{ type: 'text', text: JSON.stringify(tenants, null, 2) }],
+          }
+        }
+        case 'stats': {
+          const stats = this.multiTenantAtomspace.getMultiTenantStats()
+          return {
+            error: '',
+            content: [{ type: 'text', text: JSON.stringify(stats, null, 2) }],
+          }
+        }
+        case 'update': {
+          const updated = this.tenantManager.updateTenant(
+            args.tenant_id as string,
+            args.updates as Partial<TenantConfig>
+          )
+          return {
+            error: '',
+            content: [{ type: 'text', text: JSON.stringify(updated, null, 2) }],
+          }
+        }
+        case 'delete': {
+          this.tenantManager.deleteTenant(args.tenant_id as string)
+          return {
+            error: '',
+            content: [{ type: 'text', text: `Deleted tenant ${args.tenant_id}` }],
+          }
+        }
+        default:
+          return {
+            error: `Unknown action: ${action}`,
+            content: [{ type: 'text', text: `Unknown action: ${action}` }],
+          }
+      }
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        content: [{ type: 'text', text: `Tenant management failed: ${error}` }],
+      }
+    }
+  }
+
+  private async handleQueryMultiTenant(args: Record<string, unknown>): Promise<MCPToolCallResult> {
+    if (!this.config.enableMultiTenancy) {
+      return {
+        error: 'Multi-tenancy is disabled',
+        content: [{ type: 'text', text: 'Multi-tenancy is disabled in settings' }],
+      }
+    }
+
+    try {
+      const results = this.multiTenantAtomspace.query(
+        args.tenant_id as string,
+        args.pattern as AtomPattern,
+        {
+          federateQuery: args.federate as boolean,
+          maxTenants: args.max_tenants as number,
+        }
+      )
+
+      return {
+        error: '',
+        content: [{
+          type: 'text',
+          text: JSON.stringify(results, null, 2)
+        }],
+      }
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        content: [{ type: 'text', text: `Multi-tenant query failed: ${error}` }],
+      }
+    }
+  }
+
+  private async handleSpawnAgentZero(args: Record<string, unknown>): Promise<MCPToolCallResult> {
+    if (!this.config.enableAgentZero) {
+      return {
+        error: 'Agent-Zero is disabled',
+        content: [{ type: 'text', text: 'Agent-Zero is disabled in settings' }],
+      }
+    }
+
+    try {
+      const agent = this.agentZeroWorkbench.spawnAgent(
+        args.agent_type as any,
+        args.capabilities as string[]
+      )
+
+      return {
+        error: '',
+        content: [{
+          type: 'text',
+          text: `Spawned agent: ${JSON.stringify(agent, null, 2)}`
+        }],
+      }
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        content: [{ type: 'text', text: `Failed to spawn agent: ${error}` }],
+      }
+    }
+  }
+
+  private async handleExecuteAgentZeroPlan(args: Record<string, unknown>): Promise<MCPToolCallResult> {
+    if (!this.config.enableAgentZero) {
+      return {
+        error: 'Agent-Zero is disabled',
+        content: [{ type: 'text', text: 'Agent-Zero is disabled in settings' }],
+      }
+    }
+
+    try {
+      const context: OrchestrationContext = args.context as OrchestrationContext || {}
+      
+      // Generate tasks if not provided
+      let tasks = args.tasks as OrchestrationTask[]
+      if (!tasks || tasks.length === 0) {
+        const goalAnalysis = await this.cognitiveReasoning.analyzeGoal(args.goal as string, context)
+        tasks = goalAnalysis.decomposition.map((decomp, index) => ({
+          id: this.generateId('task'),
+          name: decomp.name,
+          description: decomp.description,
+          status: 'pending' as const,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }))
+      }
+
+      const plan = await this.agentZeroWorkbench.createWorkbenchPlan(
+        args.goal as string,
+        tasks,
+        context
+      )
+
+      const result = await this.agentZeroWorkbench.executeWorkbenchPlan(plan.id)
+
+      return {
+        error: '',
+        content: [{
+          type: 'text',
+          text: `Agent-Zero plan executed: ${JSON.stringify(result, null, 2)}`
+        }],
+      }
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        content: [{ type: 'text', text: `Agent-Zero execution failed: ${error}` }],
+      }
+    }
+  }
+
+  private async handleCreateConstellation(args: Record<string, unknown>): Promise<MCPToolCallResult> {
+    if (!this.config.enableConstellations) {
+      return {
+        error: 'Constellations are disabled',
+        content: [{ type: 'text', text: 'AI-Org Constellations are disabled in settings' }],
+      }
+    }
+
+    try {
+      const organization = this.constellationManager.createOrganization({
+        id: args.org_id as string,
+        name: args.name as string,
+        description: args.description as string,
+        tenantId: args.tenant_id as string,
+        assistants: args.assistants as any[],
+        sharedKnowledge: (args.shared_knowledge as boolean) ?? true,
+        coordinationMode: (args.coordination_mode as any) || 'collaborative',
+      })
+
+      return {
+        error: '',
+        content: [{
+          type: 'text',
+          text: `Created constellation: ${JSON.stringify(organization, null, 2)}`
+        }],
+      }
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        content: [{ type: 'text', text: `Failed to create constellation: ${error}` }],
+      }
+    }
+  }
+
+  private async handleManageConstellation(args: Record<string, unknown>): Promise<MCPToolCallResult> {
+    if (!this.config.enableConstellations) {
+      return {
+        error: 'Constellations are disabled',
+        content: [{ type: 'text', text: 'AI-Org Constellations are disabled in settings' }],
+      }
+    }
+
+    const action = args.action as string
+
+    try {
+      switch (action) {
+        case 'get': {
+          const org = this.constellationManager.getOrganization(args.org_id as string)
+          return {
+            error: '',
+            content: [{ type: 'text', text: JSON.stringify(org, null, 2) }],
+          }
+        }
+        case 'list': {
+          const orgs = this.constellationManager.listOrganizations()
+          return {
+            error: '',
+            content: [{ type: 'text', text: JSON.stringify(orgs, null, 2) }],
+          }
+        }
+        case 'stats': {
+          const stats = this.constellationManager.getConstellationStats()
+          return {
+            error: '',
+            content: [{ type: 'text', text: JSON.stringify(stats, null, 2) }],
+          }
+        }
+        case 'add_assistant': {
+          const org = this.constellationManager.addAssistant(
+            args.org_id as string,
+            args.assistant_config as any
+          )
+          return {
+            error: '',
+            content: [{ type: 'text', text: JSON.stringify(org, null, 2) }],
+          }
+        }
+        case 'remove_assistant': {
+          const org = this.constellationManager.removeAssistant(
+            args.org_id as string,
+            args.assistant_id as string
+          )
+          return {
+            error: '',
+            content: [{ type: 'text', text: JSON.stringify(org, null, 2) }],
+          }
+        }
+        case 'assign_task': {
+          const task = await this.constellationManager.assignTask(
+            args.org_id as string,
+            args.task_description as string,
+            {}
+          )
+          return {
+            error: '',
+            content: [{ type: 'text', text: JSON.stringify(task, null, 2) }],
+          }
+        }
+        default:
+          return {
+            error: `Unknown action: ${action}`,
+            content: [{ type: 'text', text: `Unknown action: ${action}` }],
+          }
+      }
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        content: [{ type: 'text', text: `Constellation management failed: ${error}` }],
+      }
+    }
+  }
+
+  private async handleShareConstellationKnowledge(args: Record<string, unknown>): Promise<MCPToolCallResult> {
+    if (!this.config.enableConstellations) {
+      return {
+        error: 'Constellations are disabled',
+        content: [{ type: 'text', text: 'AI-Org Constellations are disabled in settings' }],
+      }
+    }
+
+    try {
+      if (args.connect_orgs) {
+        this.constellationManager.connectOrganizations(
+          args.source_org_id as string,
+          args.target_org_id as string
+        )
+      }
+
+      await this.constellationManager.shareKnowledgeBetweenOrgs(
+        args.source_org_id as string,
+        args.target_org_id as string,
+        args.knowledge_type as string
+      )
+
+      return {
+        error: '',
+        content: [{
+          type: 'text',
+          text: `Knowledge shared from ${args.source_org_id} to ${args.target_org_id}`
+        }],
+      }
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        content: [{ type: 'text', text: `Knowledge sharing failed: ${error}` }],
+      }
+    }
+  }
+
   private generateId(prefix: string): string {
     return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
   }
@@ -1036,6 +1481,22 @@ export default class JanOpenCogExtension extends OpenCogExtension {
         break
       case 'pln_min_confidence':
         this.config.plnMinConfidence = Number(value)
+        break
+      // v4.0 settings
+      case 'enable_multi_tenancy':
+        this.config.enableMultiTenancy = Boolean(value)
+        break
+      case 'enable_agent_zero':
+        this.config.enableAgentZero = Boolean(value)
+        break
+      case 'enable_constellations':
+        this.config.enableConstellations = Boolean(value)
+        break
+      case 'max_agents_per_workbench':
+        this.config.maxAgentsPerWorkbench = Number(value)
+        break
+      case 'agent_zero_coordination':
+        this.config.agentZeroCoordination = value as 'centralized' | 'distributed' | 'hierarchical'
         break
     }
   }
@@ -1171,6 +1632,60 @@ const SETTINGS: SettingComponentProps[] = [
       min: 0.1,
       max: 1.0,
       step: 0.1,
+    },
+  },
+  // v4.0 Settings - Multi-Tenancy, Agent-Zero, and Constellations
+  {
+    key: 'enable_multi_tenancy',
+    title: 'Enable Multi-Tenancy',
+    description: 'Enable tenant-isolated atomspace fabric for multi-tenant deployments',
+    controllerType: 'checkbox',
+    controllerProps: {
+      value: true,
+    },
+  },
+  {
+    key: 'enable_agent_zero',
+    title: 'Enable Agent-Zero Workbench',
+    description: 'Enable autonomous agent orchestration with self-organizing agents',
+    controllerType: 'checkbox',
+    controllerProps: {
+      value: true,
+    },
+  },
+  {
+    key: 'enable_constellations',
+    title: 'Enable AI-Org Constellations',
+    description: 'Enable modular deployment of multi-assistant AI organizations',
+    controllerType: 'checkbox',
+    controllerProps: {
+      value: true,
+    },
+  },
+  {
+    key: 'max_agents_per_workbench',
+    title: 'Max Agents Per Workbench',
+    description: 'Maximum number of autonomous agents in the agent-zero workbench',
+    controllerType: 'slider',
+    controllerProps: {
+      value: 10,
+      min: 2,
+      max: 20,
+      step: 1,
+    },
+  },
+  {
+    key: 'agent_zero_coordination',
+    title: 'Agent-Zero Coordination Protocol',
+    description: 'How agents coordinate: centralized (single coordinator), distributed (self-organized), hierarchical (layered)',
+    controllerType: 'select',
+    controllerProps: {
+      value: 'hierarchical',
+      options: [
+        { label: 'Centralized', value: 'centralized' },
+        { label: 'Distributed', value: 'distributed' },
+        { label: 'Hierarchical', value: 'hierarchical' },
+      ],
     },
   },
 ]
